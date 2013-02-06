@@ -2,7 +2,11 @@
 
 -- | This is the parser module for IRC protocol,
 -- RFC 2812 <http://www.irchelp.org/irchelp/rfc/rfc2812.txt>
-module IRC where
+module IRC.Parser
+(
+  parse,
+  module IRC.Parser
+) where
 
 import Text.ParserCombinators.Parsec.Combinator
 import Text.ParserCombinators.Parsec.Prim
@@ -15,6 +19,7 @@ type Command    = String
 type MSG        = String
 type Nickname   = String
 type Servname   = String
+type Middle     = String
 
 data Message    = Message (Maybe Prefix) Command [Param]
                 deriving (Show, Eq)
@@ -23,7 +28,7 @@ data Prefix     = ServPrefix Servname
                 | UserPrefix Nickname (Maybe User) (Maybe UserHost)
                 deriving (Show, Eq)
 
-data Param      = Param String
+data Param      = Param [Middle] (Maybe String)
                 deriving (Show, Eq)
 
 data UserHost   = Hostname Host
@@ -42,14 +47,17 @@ data IPAddr     = IPv4 String
 space :: Parser Char
 space = char ' '
 
+-- | Parse nospcrlfcl
+nospcrlfcl :: Parser Char
+nospcrlfcl = noneOf ":\SP\NUL\CR\LF"
+
 -- | Trailing characters, could be empty
 trailing :: Parser String
-trailing = many1 $ noneOf "\NUL\CR\LF"
+trailing = many $ noneOf "\NUL\CR\LF"
 
 -- | Middle characters, non-empty
 middle :: Parser String
-middle = liftM2 (:) (noneOf ":\SP\NUL\CR\LF") $
-  many $ noneOf "\SP\NUL\CR\LF"
+middle = liftM2 (:) nospcrlfcl $ many $ nospcrlfcl <|> char ':'
 
 -- | Special characters
 special :: Parser Char
@@ -61,8 +69,8 @@ username = many1 $ noneOf "\NUL\CR\LF\SP@"
 
 -- | Nickname string
 nickname :: Parser String
-nickname = liftM2 (:) (letter <|> special) $
-  many (letter <|> special <|> char '-')
+nickname = liftM2 (:) (letter <|> special <|> digit) $
+  many (letter <|> special <|> digit <|> char '-')
 
 -- | Three-digit command code
 cmdDigits :: Parser String
@@ -71,9 +79,9 @@ cmdDigits = sequence [digit, digit, digit]
 -- | Parameter of a command
 param :: Parser Param
 param = do
-  _ <- space
-  par <- option "" $ try (char ':' >> trailing) <|> middle
-  return $ Param par
+  mid <- many $ try (space >> middle)
+  par <- optionMaybe $ string " :" >> trailing
+  return $ Param mid par
 
 -- | CRLF sequence
 crlf :: Parser String
