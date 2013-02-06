@@ -85,15 +85,21 @@ hostname = liftM2 (:) alphaNum $ many (alphaNum <|> oneOf ".-")
 
 -- | Parse ip addresses
 userIP :: Parser UserHost
-userIP = ipv4 <|> ipv6
+userIP = liftM UserIP $ try ipv4 <|> ipv6
 
 -- | Parse IPv4 addresses
 ipv4 :: Parser IPAddr
-ipv4 = liftM IPv4 $ sepBy1 (many1 digit) (char '.')
+ipv4 = do
+  ip <- many1 (digit <|> char '.')
+  _ <- lookAhead $ try space
+  return $ IPv4 ip
 
 -- | Parse IPv6 addresses
 ipv6 :: Parser IPAddr
-ipv6 = liftM IPv6 $ sepBy1 (many digit) (char ':')
+ipv6 = do
+  ip <- many1 (hexDigit <|> char ':')
+  _ <- lookAhead $ try space
+  return $ IPv6 ip
 
 -- | Parse user's hostname
 userHost :: Parser UserHost
