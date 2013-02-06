@@ -2,43 +2,13 @@
 
 -- | This is the parser module for IRC protocol,
 -- RFC 2812 <http://www.irchelp.org/irchelp/rfc/rfc2812.txt>
-module IRC.Parser
-(
-  parse,
-  module IRC.Parser
-) where
+module IRC.Parser where
 
 import Text.ParserCombinators.Parsec.Combinator
 import Text.ParserCombinators.Parsec.Prim
 import Text.ParserCombinators.Parsec.Char hiding (space)
 import Control.Monad (liftM, liftM2)
-
-type User       = String
-type Host       = String
-type Command    = String
-type MSG        = String
-type Nickname   = String
-type Servname   = String
-type Middle     = String
-
-data Message    = Message (Maybe Prefix) Command [Param]
-                deriving (Show, Eq)
-
-data Prefix     = ServPrefix Servname
-                | UserPrefix Nickname (Maybe User) (Maybe UserHost)
-                deriving (Show, Eq)
-
-data Param      = Param [Middle] (Maybe String)
-                deriving (Show, Eq)
-
-data UserHost   = Hostname Host
-                | UserIP IPAddr
-                | GroupCloak [String]
-                deriving (Show, Eq)
-
-data IPAddr     = IPv4 String
-                | IPv6 String
-                deriving (Show, Eq)
+import IRC.Message
 
 -- * Protocol definitions
 
@@ -81,7 +51,7 @@ param :: Parser Param
 param = do
   mid <- many $ try (space >> middle)
   par <- optionMaybe $ string " :" >> trailing
-  return $ Param mid par
+  return $ Param (mid, par)
 
 -- | CRLF sequence
 crlf :: Parser String
