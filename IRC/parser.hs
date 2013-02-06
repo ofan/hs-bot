@@ -27,6 +27,7 @@ data Param      = Param String
                 deriving (Show, Eq)
 
 data UserHost   = Hostname Host
+                | UserIP IPAddr
                 | GroupCloak [String]
                 deriving (Show, Eq)
 
@@ -82,6 +83,18 @@ crlf = string "\CR\LF"
 hostname :: Parser Host
 hostname = liftM2 (:) alphaNum $ many (alphaNum <|> oneOf ".-")
 
+-- | Parse ip addresses
+userIP :: Parser UserHost
+userIP = ipv4 <|> ipv6
+
+-- | Parse IPv4 addresses
+ipv4 :: Parser IPAddr
+ipv4 = liftM IPv4 $ sepBy1 (many1 digit) (char '.')
+
+-- | Parse IPv6 addresses
+ipv6 :: Parser IPAddr
+ipv6 = liftM IPv6 $ sepBy1 (many digit) (char ':')
+
 -- | Parse user's hostname
 userHost :: Parser UserHost
 userHost = liftM Hostname hostname
@@ -119,7 +132,7 @@ nickPrefix :: Parser Prefix
 nickPrefix = do
   nick <- nickname
   usr <- optionMaybe (char '!' >> username)
-  host <- char '@' >> optionMaybe (try groupCloaks <|> userHost)
+  host <- char '@' >> optionMaybe (try userIP <|> try groupCloaks <|> userHost)
   return $ UserPrefix nick usr host
 
 -- | Parse server prefix
