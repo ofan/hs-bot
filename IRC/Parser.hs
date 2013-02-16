@@ -8,7 +8,7 @@ import Text.ParserCombinators.Parsec.Combinator
 import Text.ParserCombinators.Parsec.Prim
 import Text.ParserCombinators.Parsec.Char hiding (space)
 import Control.Monad (liftM, liftM2)
-import IRC.Message
+import IRC.Message hiding (prefix, user, nickname, trailing, host, userHost, command, ipv4, ipv6)
 
 -- * Protocol definitions
 
@@ -50,8 +50,9 @@ cmdDigits = sequence [digit, digit, digit]
 param :: Parser Param
 param = do
   mid <- many $ try (space >> middle)
-  par <- optionMaybe $ string " :" >> trailing
-  return $ Param (mid, par)
+  par <- option "" $ string " :" >> trailing
+  let par' = if null par then Nothing else Just par
+  return $ Param mid par'
 
 -- | CRLF sequence
 crlf :: Parser String
@@ -59,7 +60,7 @@ crlf = string "\CR\LF"
 
 -- | Hostname string
 hostname :: Parser Host
-hostname = liftM2 (:) alphaNum $ many (alphaNum <|> oneOf ".-")
+hostname = many1 (alphaNum <|> oneOf ".-")
 
 -- | Parse ip addresses
 userIP :: Parser UserHost
@@ -81,7 +82,7 @@ ipv6 = do
 
 -- | Parse user's hostname
 userHost :: Parser UserHost
-userHost = liftM Hostname hostname
+userHost = liftM Hostname $ hostname >>= \x -> lookAhead (try space) >> return x
 
 -- | Parse group cloaks
 groupCloaks :: Parser UserHost
@@ -96,7 +97,8 @@ message :: Parser Message
 message = do
   pre <- optionMaybe prefix
   com <- command
-  par <- manyTill param crlf
+  par <- param
+  _ <- crlf
   return $ Message pre com par
 
 -- | The prefix of a message contains the original source of it.
@@ -115,8 +117,8 @@ prefix = do
 nickPrefix :: Parser Prefix
 nickPrefix = do
   nick <- nickname
-  usr <- optionMaybe (char '!' >> username)
-  host <- char '@' >> optionMaybe (try userIP <|> try groupCloaks <|> userHost)
+  usr  <- optionMaybe (char '!' >> username)
+  host <- char '@' >> optionMaybe (try userIP <|> try userHost <|> groupCloaks)
   return $ UserPrefix nick usr host
 
 -- | Parse server prefix
