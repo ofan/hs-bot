@@ -5,22 +5,22 @@ import IRC.FMessage as M
 import System.Environment
 import System.IO
 import Data.Attoparsec.Combinator
-import Data.Attoparsec.Text.Lazy (Result(..))
-import qualified Data.Text.Lazy as L
-import qualified Data.Text.Lazy.IO as I
+import Data.Attoparsec.ByteString.Char8 (IResult(..))
+import qualified Data.ByteString.Char8 as B
 import Control.Monad
 import System.Exit
 
 parseLine :: Handle -> IO ()
-parseLine inh = I.hGetLine inh >>= \x ->
-  case (parse (many' message) . (`L.append` "\n")) x of
-    Done r res -> if (not . L.null) r
-                   then putStrLn $ "Parse error, remaining" ++ L.unpack r
+parseLine inh = B.hGetLine inh >>= \x ->
+  case (parse (many' message) . (`B.append` "\n")) x of
+    Done r res -> if (not . B.null) r
+                   then putStrLn $ "Parse error, remaining" ++ B.unpack r
                    else print $ M.command $ head res
+    Fail _ _ e -> putStrLn $ "Parse error: " ++ e
     _ -> putStrLn "Need more input"
 
 parseLineToFile :: Handle -> Handle -> IO ()
-parseLineToFile inh outh = I.hGetLine inh >>= hPrint outh . parse (many' message) . (`L.append` "\n")
+parseLineToFile inh outh = B.hGetLine inh >>= hPrint outh . parse (many' message) . (`B.append` "\n")
 
 main ::  IO ()
 main = do

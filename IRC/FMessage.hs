@@ -3,16 +3,16 @@
 {-# LANGUAGE OverlappingInstances #-}
 module IRC.FMessage where
 
-import Data.Text
+import Data.ByteString.Char8
 
-type Host     = Text
-type Command  = Text
-type MSG      = Text
-type Nickname = Text
-type Servname = Text
-type Middle   = Text
+type Host     = ByteString
+type Command  = ByteString
+type MSG      = ByteString
+type Nickname = ByteString
+type Servname = ByteString
+type Middle   = ByteString
 
-data User     = User { userName :: Text }
+data User     = User { userName :: ByteString }
               | NullUser
               deriving (Eq)
 
@@ -31,18 +31,18 @@ data Prefix   = ServPrefix { servName :: Servname }
               deriving (Eq)
 
 data Param    = Param { cmdList  :: [Middle]
-                      , trailing :: Maybe Text
+                      , trailing :: Maybe ByteString
                       }
               deriving (Eq)
 
 data UserHost = Hostname   { host   :: Host }
               | UserIP     { ipAddr :: IPAddr }
-              | GroupCloak { cloaks :: [Text] }
+              | GroupCloak { cloaks :: [ByteString] }
               | NullHost
               deriving (Eq)
 
-data IPAddr   = IPv4 { ip :: Text }
-              | IPv6 { ip :: Text }
+data IPAddr   = IPv4 { ip :: ByteString }
+              | IPv6 { ip :: ByteString }
               deriving (Eq)
 
 instance Show Message where

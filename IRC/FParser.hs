@@ -20,13 +20,13 @@ module IRC.FParser
 )
 where
 
-import qualified Data.Text as T
-import Data.Attoparsec.Text.Lazy hiding (space)
-import Control.Applicative
-import Data.Char (isAlphaNum, isAlpha, isHexDigit, isDigit)
-import Control.Monad (liftM)
-import Prelude hiding (takeWhile)
 import IRC.FMessage hiding (userName, prefix, command, params, servName, nickName, user, userHost, host, ipAddr, cloaks, ip, trailing)
+import Prelude hiding (takeWhile)
+import Data.Char (isAlphaNum, isAlpha, isHexDigit)
+import Control.Applicative
+import Control.Monad (liftM)
+import qualified Data.ByteString.Char8 as B
+import Data.Attoparsec.ByteString.Char8 hiding (space)
 
 -- * Protocol definitions
 
@@ -36,43 +36,43 @@ space :: Parser Char
 space = char ' '
 
 -- | Parse nospcrlfcl
-nospcrlfcl :: Parser T.Text
+nospcrlfcl :: Parser B.ByteString
 nospcrlfcl = takeWhile1 (`notElem` ":\SP\NUL\CR\LF")
 
 -- | Trailing characters, could be empty
-trailing :: Parser T.Text
+trailing :: Parser B.ByteString
 trailing = takeWhile (`notElem` "\NUL\CR\LF")
 
 -- | Middle characters, non-empty
-middle :: Parser T.Text
+middle :: Parser B.ByteString
 middle = do
   x <- nospcrlfcl
   y <- takeWhile (`notElem` "\SP\NUL\CR\LF")
-  return (T.append x y)
+  return (B.append x y)
 
 -- | Parse username
-username :: Parser T.Text
+username :: Parser B.ByteString
 username = takeWhile1 (`notElem` "\NUL\CR\LF\SP@")
 
 -- | Nickname string, it seems like many IRC service providers tend to support unusual characters in nickname,
 -- | the nickname combinator just takes all characters before '!' in the prefix.
-nickname :: Parser T.Text
+nickname :: Parser B.ByteString
 nickname = takeWhile1 (\x -> x `elem` "[]\\`_^{}|-" || isAlphaNum x)
 
 -- | Three-digit command code
-cmdDigits :: Parser T.Text
+cmdDigits :: Parser B.ByteString
 cmdDigits = takeWhile1 isDigit
 
 -- | Parameter of a command
 param :: Parser Param
 param = do
   mid <- many' $ space >> middle
-  par <- option T.empty $ string " :" >> trailing
-  let par' = if T.null par then Nothing else Just par
+  par <- option B.empty $ string " :" >> trailing
+  let par' = if B.null par then Nothing else Just par
   return $ Param mid par'
 
 -- | CRLF sequence
-crlf :: Parser T.Text
+crlf :: Parser B.ByteString
 crlf = string "\CR\LF"
 
 -- | Hostname string
