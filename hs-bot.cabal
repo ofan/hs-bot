@@ -1,7 +1,7 @@
 name: hs-bot
 version: 0.1
 cabal-version: >= 1.14
-author: Ryan Feng
+author: Ryan Feng <odayfans@gmail.com>
 build-type: Simple
 
 Library
