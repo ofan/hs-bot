@@ -3,7 +3,8 @@
 {-# LANGUAGE OverlappingInstances #-}
 module IRC.FMessage where
 
-import Data.ByteString.Char8
+import Data.ByteString.Char8 as B
+import Data.Monoid ((<>))
 
 type Host     = ByteString
 type Command  = ByteString
@@ -45,6 +46,8 @@ data IPAddr   = IPv4 { ip :: ByteString }
               | IPv6 { ip :: ByteString }
               deriving (Eq)
 
+-- Show instances
+-- ``````````````
 instance Show Message where
   show m = "Message {\n\t"
         ++ "Prefix : "  ++ show (prefix m)  ++ "\n\t"
@@ -77,3 +80,34 @@ instance Show IPAddr where
 instance Show User where
   show (User u) = unpack u
   show NullUser = "<empty>"
+
+-- | RawShow class converts message into raw IRC message
+class RawShow a where
+  rawShow :: a -> ByteString
+
+-- RawShow instances
+-- `````````````````
+instance RawShow Param where
+  rawShow (Param m (Just t)) = B.unwords m <> ":" <> t
+  rawShow (Param m Nothing)  = B.unwords m
+
+instance RawShow Prefix where
+  rawShow NullPrefix         = empty
+  rawShow (ServPrefix s)     = ":" <> s
+  rawShow (UserPrefix n u h) = ":" <> n <> rawShow u <> rawShow h
+
+instance RawShow User where
+  rawShow NullUser = empty
+  rawShow (User u) = "!" <> u
+
+instance RawShow UserHost where
+  rawShow NullHost       = empty
+  rawShow (Hostname h)   = "@" <> h
+  rawShow (UserIP i)     = "@" <> ip i
+  rawShow (GroupCloak c) = "@" <> intercalate "/" c
+
+instance RawShow Command where
+  rawShow = id
+
+instance RawShow Message where
+  rawShow (Message pre cmd pars) = B.unwords [rawShow pre, rawShow cmd, rawShow pars]
