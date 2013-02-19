@@ -4,29 +4,53 @@
 -- | This is the parser module for IRC protocol,
 -- RFC 2812 <http://www.irchelp.org/irchelp/rfc/rfc2812.txt>
 module IRC.FParser
-(
-  parse,
-  command,
-  hostname,
-  ipv4, ipv6,
-  message,
-  nickname,
-  nickPrefix,
-  prefix,
-  servPrefix,
-  userHost,
-  userIP,
-  username
-)
+  ( command
+  , hostname
+  , ipv4
+  , ipv6
+  , message
+  , nickname
+  , nickPrefix
+  , prefix
+  , servPrefix
+  , userHost
+  , userIP
+  , username
+  )
 where
 
-import IRC.FMessage hiding (userName, prefix, command, params, servName, nickName, user, userHost, host, ipAddr, cloaks, ip, trailing)
+import IRC.FMessage hiding
+  ( userName
+  , prefix
+  , command
+  , params
+  , servName
+  , nickName
+  , user
+  , userHost
+  , host
+  , ipAddr
+  , cloaks
+  , ip
+  , trailing)
 import Prelude hiding (takeWhile)
 import Data.Char (isAlphaNum, isAlpha, isHexDigit)
 import Control.Applicative
 import Control.Monad (liftM)
 import qualified Data.ByteString.Char8 as B
-import Data.Attoparsec.ByteString.Char8 hiding (space)
+import Data.Attoparsec.ByteString.Char8
+  ( takeWhile
+  , takeWhile1
+  , char
+  , Parser
+  , isDigit
+  , many'
+  , option
+  , string
+  , try
+  , sepBy1'
+  , (<?>)
+  )
 
 -- * Protocol definitions
 
