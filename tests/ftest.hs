@@ -5,7 +5,7 @@ import IRC.FMessage as M
 import System.Environment
 import System.IO
 import Data.Attoparsec.Combinator
-import Data.Attoparsec.ByteString.Char8 (IResult(..))
+import Data.Attoparsec.ByteString.Char8 (IResult(..), parse)
 import qualified Data.ByteString.Char8 as B
 import Control.Monad
 import System.Exit
