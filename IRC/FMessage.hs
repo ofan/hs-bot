@@ -3,17 +3,17 @@
 {-# LANGUAGE OverlappingInstances #-}
 module IRC.FMessage where
 
-import Data.ByteString.Char8 as B
+import Data.Text as T
 import Data.Monoid ((<>))
 
-type Host     = ByteString
-type Command  = ByteString
-type MSG      = ByteString
-type Nickname = ByteString
-type Servname = ByteString
-type Middle   = ByteString
+type Host     = Text
+type Command  = Text
+type MSG      = Text
+type Nickname = Text
+type Servname = Text
+type Middle   = Text
 
-data User     = User { userName :: ByteString }
+data User     = User { userName :: Text }
               | NullUser
               deriving (Eq)
 
@@ -32,18 +32,18 @@ data Prefix   = ServPrefix { servName :: Servname }
               deriving (Eq)
 
 data Param    = Param { cmdList  :: [Middle]
-                      , trailing :: Maybe ByteString
+                      , trailing :: Maybe Text
                       }
               deriving (Eq)
 
 data UserHost = Hostname   { host   :: Host }
               | UserIP     { ipAddr :: IPAddr }
-              | GroupCloak { cloaks :: [ByteString] }
+              | GroupCloak { cloaks :: [Text] }
               | NullHost
               deriving (Eq)
 
-data IPAddr   = IPv4 { ip :: ByteString }
-              | IPv6 { ip :: ByteString }
+data IPAddr   = IPv4 { ip :: Text }
+              | IPv6 { ip :: Text }
               deriving (Eq)
 
 -- Show instances
@@ -83,13 +83,13 @@ instance Show User where
 
 -- | RawShow class converts message into raw IRC message
 class RawShow a where
-  rawShow :: a -> ByteString
+  rawShow :: a -> Text
 
 -- RawShow instances
 -- `````````````````
 instance RawShow Param where
-  rawShow (Param m (Just t)) = B.unwords m <> ":" <> t
-  rawShow (Param m Nothing)  = B.unwords m
+  rawShow (Param m (Just t)) = T.unwords m <> " :" <> t
+  rawShow (Param m Nothing)  = T.unwords m
 
 instance RawShow Prefix where
   rawShow NullPrefix         = empty
@@ -110,4 +110,5 @@ instance RawShow Command where
   rawShow = id
 
 instance RawShow Message where
-  rawShow (Message pre cmd pars) = B.unwords [rawShow pre, rawShow cmd, rawShow pars]
+  rawShow (Message NullPrefix cmd pars) = T.unwords [rawShow cmd, rawShow pars]
+  rawShow (Message pre cmd pars) = T.unwords [rawShow pre, rawShow cmd, rawShow pars]
