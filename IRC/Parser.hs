@@ -1,14 +1,55 @@
+{-# LANGUAGE OverloadedStrings #-}
 -- Copyright (C) 2013, Ryan Feng
 
 -- | This is the parser module for IRC protocol,
 -- RFC 2812 <http://www.irchelp.org/irchelp/rfc/rfc2812.txt>
-module IRC.Parser where
+module IRC.Parser
+  ( command
+  , hostname
+  , ipv4
+  , ipv6
+  , message
+  , nickname
+  , nickPrefix
+  , prefix
+  , servPrefix
+  , userHost
+  , userIP
+  , username
+  )
+where
 
-import Text.ParserCombinators.Parsec.Combinator
-import Text.ParserCombinators.Parsec.Prim
-import Text.ParserCombinators.Parsec.Char hiding (space)
-import Control.Monad (liftM, liftM2)
-import IRC.Message hiding (prefix, user, nickname, trailing, host, userHost, command, ipv4, ipv6)
+import IRC.Message hiding
+  ( userName
+  , prefix
+  , command
+  , params
+  , servName
+  , nickName
+  , user
+  , userHost
+  , host
+  , ipAddr
+  , cloaks
+  , ip
+  , trailing)
+import Prelude hiding (takeWhile)
+import Data.Char (isAlphaNum, isAlpha, isHexDigit)
+import Control.Applicative
+import Control.Monad (liftM)
+import qualified Data.Text as T
+import Data.Attoparsec.Text
+  ( takeWhile
+  , takeWhile1
+  , char
+  , Parser
+  , many'
+  , option
+  , string
+  , try
+  , sepBy1'
+  , (<?>)
+  )
 
 -- * Protocol definitions
 
@@ -17,50 +58,53 @@ import IRC.Message hiding (prefix, user, nickname, trailing, host, userHost, com
 space :: Parser Char
 space = char ' '
 
+-- | Digit filter
+isDigit :: Char -> Bool
+isDigit = (`elem` "0123456789")
+
 -- | Parse nospcrlfcl
-nospcrlfcl :: Parser Char
-nospcrlfcl = noneOf ":\SP\NUL\CR\LF"
+nospcrlfcl :: Parser T.Text
+nospcrlfcl = takeWhile1 (`notElem` ":\SP\NUL\CR\LF")
 
 -- | Trailing characters, could be empty
-trailing :: Parser String
-trailing = many $ noneOf "\NUL\CR\LF"
+trailing :: Parser T.Text
+trailing = takeWhile (`notElem` "\NUL\CR\LF")
 
 -- | Middle characters, non-empty
-middle :: Parser String
-middle = liftM2 (:) nospcrlfcl $ many $ nospcrlfcl <|> char ':'
-
--- | Special characters
-special :: Parser Char
-special = oneOf "[]\\`_^{|}"
+middle :: Parser T.Text
+middle = do
+  x <- nospcrlfcl
+  y <- takeWhile (`notElem` "\SP\NUL\CR\LF")
+  return (T.append x y)
 
 -- | Parse username
-username :: Parser String
-username = many1 $ noneOf "\NUL\CR\LF\SP@"
+username :: Parser T.Text
+username = takeWhile1 (`notElem` "\NUL\CR\LF\SP@")
 
--- | Nickname string
-nickname :: Parser String
-nickname = liftM2 (:) (letter <|> special <|> digit) $
-  many (letter <|> special <|> digit <|> char '-')
+-- | Nickname string, it seems like many IRC service providers tend to support unusual characters in nickname,
+-- | the nickname combinator just takes all characters before '!' in the prefix.
+nickname :: Parser T.Text
+nickname = takeWhile1 (\x -> x `elem` "[]\\`_^{}|-" || isAlphaNum x)
 
 -- | Three-digit command code
-cmdDigits :: Parser String
-cmdDigits = sequence [digit, digit, digit]
+cmdDigits :: Parser T.Text
+cmdDigits = takeWhile1 isDigit
 
 -- | Parameter of a command
 param :: Parser Param
 param = do
-  mid <- many $ try (space >> middle)
-  par <- option "" $ string " :" >> trailing
-  let par' = if null par then Nothing else Just par
+  mid <- many' $ space >> middle
+  par <- option T.empty $ string " :" >> trailing
+  let par' = if T.null par then Nothing else Just par
   return $ Param mid par'
 
 -- | CRLF sequence
-crlf :: Parser String
+crlf :: Parser T.Text
 crlf = string "\CR\LF"
 
 -- | Hostname string
 hostname :: Parser Host
-hostname = many1 (alphaNum <|> oneOf ".-")
+hostname = takeWhile $ \x -> isAlphaNum x || x == '.' || x == '-'
 
 -- | Parse ip addresses
 userIP :: Parser UserHost
@@ -69,24 +113,24 @@ userIP = liftM UserIP $ try ipv4 <|> ipv6
 -- | Parse IPv4 addresses
 ipv4 :: Parser IPAddr
 ipv4 = do
-  ip <- many1 (digit <|> char '.')
-  _ <- lookAhead $ try space
+  ip <- takeWhile1 (\x -> isDigit x || x == '.') <* space
+  {-_ <- lookAhead $ try space-}
   return $ IPv4 ip
 
 -- | Parse IPv6 addresses
 ipv6 :: Parser IPAddr
 ipv6 = do
-  ip <- many1 (hexDigit <|> char ':')
-  _ <- lookAhead $ try space
+  ip <- takeWhile1 (\x -> isHexDigit x || x == ':') <* space
+  {-_ <- lookAhead $ try space-}
   return $ IPv6 ip
 
 -- | Parse user's hostname
 userHost :: Parser UserHost
-userHost = liftM Hostname $ hostname >>= \x -> lookAhead (try space) >> return x
+userHost = liftM Hostname hostname <* space
 
 -- | Parse group cloaks
 groupCloaks :: Parser UserHost
-groupCloaks = liftM GroupCloak $ sepBy1 hostname (char '/')
+groupCloaks = liftM GroupCloak $ sepBy1' hostname (char '/') <* space
 
 -- ** Message parsing
 
@@ -95,10 +139,10 @@ groupCloaks = liftM GroupCloak $ sepBy1 hostname (char '/')
 -- > message    =  [ ":" prefix SPACE ] command [ params ] crlf
 message :: Parser Message
 message = do
-  pre <- optionMaybe prefix
+  pre <- option NullPrefix prefix
   com <- command
   par <- param
-  _ <- crlf
+  _   <- crlf
   return $ Message pre com par
 
 -- | The prefix of a message contains the original source of it.
@@ -107,24 +151,20 @@ message = do
 -- should only use its registered nick name as the prefix.
 -- > prefix     =  servername / ( nickname [ [ "!" user ] "@" host ] )
 prefix :: Parser Prefix
-prefix = do
-  _ <- char ':'
-  pre <- try nickPrefix <|> servPrefix
-  _ <- space
-  return pre
+prefix = char ':' *> option NullPrefix (nickPrefix <|> servPrefix)
 
 -- | Parse nickname prefix
 nickPrefix :: Parser Prefix
 nickPrefix = do
   nick <- nickname
-  usr  <- optionMaybe (char '!' >> username)
-  host <- char '@' >> optionMaybe (try userIP <|> try userHost <|> groupCloaks)
+  usr <- option NullUser $ liftM User $ char '!' >> username
+  host <- char '@' *> option NullHost (userIP <|> userHost <|> groupCloaks)
   return $ UserPrefix nick usr host
 
 -- | Parse server prefix
 servPrefix :: Parser Prefix
-servPrefix = liftM ServPrefix hostname
+servPrefix = liftM ServPrefix $ hostname <* space
 
 -- | Command
 command :: Parser Command
-command = try (many1 letter) <|> cmdDigits <?> "a command"
+command = takeWhile1 isAlpha <|> cmdDigits <?> "a command"
