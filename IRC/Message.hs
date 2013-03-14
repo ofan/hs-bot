@@ -4,6 +4,7 @@
 module IRC.Message where
 
 import Data.Text as T
+import Data.Time (ZonedTime(..))
 import Data.Monoid ((<>))
 
 type Host     = Text
@@ -17,11 +18,15 @@ data User     = User { userName :: Text }
               | NullUser
               deriving (Eq)
 
-data Message  = Message { prefix  :: Prefix
-                        , command :: Command
-                        , params  :: Param
+data Message  = Message { prefix    :: Prefix
+                        , command   :: Command
+                        , params    :: Param
                         }
               deriving (Eq)
+
+data TMessage = TMessage { msg       :: Message
+                         , timestamp :: ZonedTime
+                         }
 
 data Prefix   = ServPrefix { servName :: Servname }
               | UserPrefix { nickName :: Nickname
@@ -45,6 +50,13 @@ data UserHost = Hostname   { host   :: Host }
 data IPAddr   = IPv4 { ip :: Text }
               | IPv6 { ip :: Text }
               deriving (Eq)
+
+-- Eq instances
+-- ````````````
+instance Eq TMessage where
+  tm1 == tm2 = (msg tm1 == msg tm2) &&
+              (zonedTimeToLocalTime (timestamp tm1) ==
+                zonedTimeToLocalTime (timestamp tm2))
 
 -- Show instances
 -- ``````````````
@@ -108,6 +120,12 @@ instance RawShow UserHost where
 
 instance RawShow Command where
   rawShow = id
+
+instance RawShow ZonedTime where
+  rawShow = T.pack . show
+
+instance RawShow TMessage where
+  rawShow = rawShow . msg
 
 instance RawShow Message where
   rawShow (Message NullPrefix cmd pars) = T.unwords [rawShow cmd, rawShow pars]
