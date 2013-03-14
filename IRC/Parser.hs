@@ -19,6 +19,14 @@ module IRC.Parser
   )
 where
 
+import Prelude hiding (takeWhile)
+import qualified Data.Text as T
+import Data.Attoparsec.Text hiding (space)
+import Data.Char (isAlphaNum, isAlpha, isHexDigit)
+
+import Control.Applicative
+import Control.Monad (liftM)
+
 import IRC.Message hiding
   ( userName
   , prefix
@@ -33,23 +41,6 @@ import IRC.Message hiding
   , cloaks
   , ip
   , trailing)
-import Prelude hiding (takeWhile)
-import Data.Char (isAlphaNum, isAlpha, isHexDigit)
-import Control.Applicative
-import Control.Monad (liftM)
-import qualified Data.Text as T
-import Data.Attoparsec.Text
-  ( takeWhile
-  , takeWhile1
-  , char
-  , Parser
-  , many'
-  , option
-  , string
-  , try
-  , sepBy1'
-  , (<?>)
-  )
 
 -- * Protocol definitions
 
@@ -94,7 +85,7 @@ cmdDigits = takeWhile1 isDigit
 param :: Parser Param
 param = do
   mid <- many' $ space >> middle
-  par <- option T.empty $ string " :" >> trailing
+  par <- option T.empty $ string " :" *> trailing
   let par' = if T.null par then Nothing else Just par
   return $ Param mid par'
 
