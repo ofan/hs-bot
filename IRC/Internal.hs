@@ -14,10 +14,12 @@ module IRC.Internal
 , PluginD
 , PluginB
 , PluginC
+, readChan
+, writeChan
 , readTBMChanS
 , writeTBMChanS
-, hGetLineS
-, hPutStrLnD
+, hGetLineSE
+, hPutStrLnDE
 , toMessage
 , toRaw
 )
@@ -29,13 +31,12 @@ import Data.Monoid ((<>))
 import Control.Concurrent.STM.TBMChan
 import Control.Monad
 import Control.Monad.STM
-import Control.Exception (try, SomeException(..))
-import Control.Proxy hiding (Server, hGetLineS, hPutStrLnD)
+import qualified Control.Exception as E (try)
+import Control.Proxy hiding (Server)
 import Control.Proxy.Trans.Either
 
 import qualified Data.Attoparsec.Text as Parser
-import Data.Typeable (Typeable)
-import Data.Time (getZonedTime)
+import System.Time (ClockTime(..), getClockTime)
 
 import Network (HostName, PortNumber)
 import System.IO (Handle, hIsEOF)
@@ -52,8 +53,7 @@ type ReadChan = TBMChan Message
 type WriteChan = TBMChan TMessage
 
 -- | A specialized Proxy type for all plugins and components that communicate with IRC servers.
-type Plugin a' a b' b = forall r p. (Proxy p) =>
-    b' -> EitherP SomeException p a' a b' b IO r
+type Plugin a' a b' b = forall r p m. (Proxy p, Monad m) => b' -> EitherP SomeException p a' a b' b m r
 
 {-  Receive from upstream ------------+                +----------------- Receive from downstream
                                       |                |
@@ -66,21 +66,37 @@ type PluginB = Plugin (Maybe Message) (Maybe TMessage) (Maybe Message) (Maybe TM
 type PluginC = Plugin (Maybe Message) (Maybe TMessage) ()              C
 
 data Server = Server {
+  -- | Server host name
   sHost   :: HostName
+  -- | Server port number
 , sPort   :: PortNumber
+  -- | Handle to the socket
 , sHandle :: Handle
-} deriving (Show, Eq, Typeable)
+  -- | The time the connection established with the server
+, sConnectionTime :: ClockTime
+} deriving (Show, Eq)
 
 {- Internal methods -}
 -- ``````````````````
+
+-- | A wrapper around 'readTBMChan', it throws an exceptions if the channel is closed.
+readChan :: TBMChan a -> IO a
+readChan ch = do
+  m <- atomically $ readTBMChan ch
+  case m of
+    Nothing -> throwE ChannelIsClosed
+    Just m' -> return m'
+
+-- | IO version of 'writeTBMChan'
+writeChan :: TBMChan a -> a -> IO ()
+writeChan ch m = atomically $ writeTBMChan ch m
+
 -- | A wrapper around STM chan for Producer, it reads from a TChan and passes it down pipeline.
 readTBMChanS :: (Proxy p) =>
   TBMChan v -> () -> Producer (EitherP SomeException p) v IO ()
 readTBMChanS ch () = forever $ do
-  m <- lift $ atomically $ readTBMChan ch
-  case m of
-    Nothing -> throw $ SomeException ChannelIsClosed
-    Just m' -> respond m'
+  m <- lift $ readChan ch
+  respond m
 
 -- | Write values to a TBMChan.
 writeTBMChanS :: (Proxy p) =>
@@ -90,24 +106,24 @@ writeTBMChanS ch () = forever $ do
   lift $ atomically $ writeTBMChan ch m
 
 -- | Take lines of stream from a 'Handle' and sends down the pipe.
-hGetLineS :: (Proxy p) =>
+hGetLineSE :: (Proxy p) =>
   Handle -> () ->  Producer (EitherP SomeException p) T.Text IO ()
-hGetLineS h () = forever $ do
+hGetLineSE h () = forever $ do
     eof <- lift $ hIsEOF h
     unless eof $ do
-        str <- lift $ try $ T.hGetLine h
+        str <- lift $ E.try $ T.hGetLine h
         case str of
-          Left e -> throw e  -- Re-throw exception from IO monad
+          Left e -> throwP e  -- Re-throw exception from IO monad
           Right m -> respond m
 
 -- | Take lines of 'Text' stream from downstream and write it to the 'Handle'.
-hPutStrLnD :: (Proxy p) =>
+hPutStrLnDE :: (Proxy p) =>
   Handle -> () -> Consumer (EitherP SomeException p) T.Text IO ()
-hPutStrLnD h () = forever $ do
+hPutStrLnDE h () = forever $ do
   str <- request ()
-  e <- lift $ try $ T.hPutStrLn h str
+  e <- lift $ E.try $ T.hPutStrLn h str
   case e of
-    Left e' -> throw e' -- Re-throw exceptions from IO monad
+    Left e' -> throwP e' -- Re-throw exceptions from IO monad
     Right m -> return m
 
 -- | Parse each raw IRC message and send the result down in the pipeline.
@@ -118,9 +134,9 @@ toMessage () = forever $ do
   s <- request ()
   case Parser.parse message (s <> "\n") of
     -- TODO: make sure that parsed message is fully evaluated
-    Parser.Done _ m   -> lift getZonedTime >>= (respond . TMessage m)
-    Parser.Fail t c e -> throw $ SomeException $ ParserFail e (T.unpack t) c
-    Parser.Partial _  -> throw $ SomeException ParserNeedMoreInput
+    Parser.Done _ m   -> lift getClockTime >>= (respond . TMessage m)
+    Parser.Fail t c e -> throwP $ SomeException $ ParserFail e (T.unpack t) c
+    Parser.Partial _  -> throwP $ SomeException ParserNeedMoreInput
 
 -- | Convert Message to raw IRC messages.
 toRaw :: (Proxy p) => () -> Pipe p Message T.Text IO ()
