@@ -6,7 +6,6 @@ module IRC.Tunnel
 , tryReadTunnel
 , writeTunnel
 , tryWriteTunnel
-, tunnelS
 )
 where
 
@@ -50,14 +49,14 @@ newTunnel server bufsize = do
   rch <- newTBMChanIO bufsize
   wch <- newTBMChanIO bufsize
   rtid <- forkIO $ do
-    r <- runProxy $ runEitherK $ hGetLineS (sHandle server) >-> toMessage >-> writeTBMChanS rch
+    r <- runProxy $ runEitherK $ hGetLineSE (sHandle server) >-> toMessage >-> writeTBMChanS rch
     case r of
-      Left e -> E.throw e
+      Left e -> E.throw e -- Rethrow exceptions in IO monad
       Right _ -> return ()
   wtid <- forkIO $ do
-    r <- runProxy $ runEitherK $ readTBMChanS wch >-> toRaw >-> hPutStrLnD (sHandle server)
+    r <- runProxy $ runEitherK $ readTBMChanS wch >-> toRaw >-> hPutStrLnDE (sHandle server)
     case r of
-      Left e -> E.throw e
+      Left e -> E.throw e -- Rethrow exceptions in IO monad
       Right _ -> return ()
   return $ Tunnel server rch wch rtid wtid
 
@@ -91,19 +90,4 @@ tryWriteTunnel t m = do
   case r of
     Nothing -> E.throw TunnelIsClosed
     Just rr -> return rr
-
--- | A wrapper around 'Tunnel' for Proxy Server.
-tunnelS :: Tunnel -> II.PluginS
-tunnelS t = go
-  where go m = case m of
-          Nothing -> do -- Client requests for new message
-            inmsg <- lift $ tryReadTunnel t
-            m'' <- respond inmsg
-            go m''
-          -- | Write the message to the channel, then send Nothing to downstream, the downstream should
-          -- discard received Nothing at all times.
-          Just m' -> do
-            lift $ writeTunnel t m'
-            n <- respond Nothing
-            go n
 
