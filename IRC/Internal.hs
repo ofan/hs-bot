@@ -8,12 +8,16 @@ module IRC.Internal
   Server(..)
 , ReadChan
 , WriteChan
+-- * Proxy types
 , Plugin
 , PluginS
 , PluginU
 , PluginD
 , PluginB
 , PluginC
+, PluginP
+, PluginR
+-- * Proxy primitives
 , readChan
 , writeChan
 , readTBMChanS
@@ -31,9 +35,11 @@ import Data.Monoid ((<>))
 import Control.Concurrent.STM.TBMChan
 import Control.Monad
 import Control.Monad.STM
+import Control.Monad.IO.Class
 import qualified Control.Exception as E (try)
 import Control.Proxy hiding (Server)
 import Control.Proxy.Trans.Either
+import Control.Proxy.Trans.Reader
 
 import qualified Data.Attoparsec.Text as Parser
 import System.Time (ClockTime(..), getClockTime)
@@ -53,17 +59,20 @@ type ReadChan = TBMChan Message
 type WriteChan = TBMChan TMessage
 
 -- | A specialized Proxy type for all plugins and components that communicate with IRC servers.
-type Plugin a' a b' b = forall r p m. (Proxy p, Monad m) => b' -> EitherP SomeException p a' a b' b m r
+type Plugin a' a b' b i = forall p m r. (Proxy p, MonadIOP p, MonadIO m, Monad m) =>
+  b' -> EitherP SomeException (ReaderP i p) a' a b' b m r
 
 {-  Receive from upstream ------------+                +----------------- Receive from downstream
                                       |                |
     Send to upstream -+               |                |               +- Send to downstream
                       |               |                |               |                   -}
-type PluginS = Plugin C               ()               (Maybe Message) (Maybe TMessage)
-type PluginD = Plugin ()              (Maybe TMessage) ()              (Maybe TMessage)
-type PluginU = Plugin (Maybe Message) ()               (Maybe Message) ()
-type PluginB = Plugin (Maybe Message) (Maybe TMessage) (Maybe Message) (Maybe TMessage)
-type PluginC = Plugin (Maybe Message) (Maybe TMessage) ()              C
+type PluginS = Plugin C               ()               (Maybe Message) (Maybe TMessage) Server
+type PluginD = Plugin ()              (Maybe TMessage) ()              (Maybe TMessage) Server
+type PluginU = Plugin (Maybe Message) ()               (Maybe Message) ()               Server
+type PluginB = Plugin (Maybe Message) (Maybe TMessage) (Maybe Message) (Maybe TMessage) Server
+type PluginC = Plugin (Maybe Message) (Maybe TMessage) ()              C                Server
+type PluginR = Plugin ()              (Maybe TMessage) ()              C                Server
+type PluginP = Plugin C               ()               ()              (Maybe TMessage) Server
 
 data Server = Server {
   -- | Server host name
