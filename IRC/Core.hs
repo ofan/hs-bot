@@ -1,20 +1,37 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 module IRC.Core
 (
+  echoC
+, loginB
 )
 where
 
-import Control.Concurrent
-import Control.Concurrent.STM.TBMChan
 import Control.Monad
+import Control.Proxy
+import Control.Proxy.Trans.Reader
 
-import Data.Conduit
-import Data.Conduit.TMChan
-import qualified Data.ByteString.Lazy.Char8 as B
-
-import IRC.Parser
 import IRC.Message
-import IRC.Net
-import IRC.Error
-import IRC.Tunnel
+import IRC.Internal
 
 -- | Echo pipe, sends ping periodically to the server('Tunnel'), disconnect from the server if times out.
+echoC :: PluginC
+echoC () = forever $ do
+  h <- liftP ask
+  m <- request $ Just $ mkPing (sHost h)
+  case m of
+    Nothing -> return ()
+    Just (TMessage m' _) -> when (command m' == Command PING) $ void $ request $ Just $ mkPong (sHost h)
+
+-- | Login proxy, becomes a transparent proxy after sending NICK and USER command.
+loginB :: Nickname -> Username -> PluginB
+loginB n u = \m -> do
+  _ <- request (Just $ mkNick n)
+  _ <- request (Just $ mkUser u "0" "*")
+  go m
+  where go m = do
+          m' <- request m
+          n' <- respond m'
+          go n'
+
