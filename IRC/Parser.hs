@@ -23,6 +23,7 @@ import Prelude hiding (takeWhile)
 import qualified Data.Text as T
 import Data.Attoparsec.Text hiding (space)
 import Data.Char (isAlphaNum, isAlpha, isHexDigit)
+import qualified Data.HashMap.Strict as M
 
 import Control.Applicative
 import Control.Monad (liftM)
@@ -158,4 +159,6 @@ servPrefix = liftM ServPrefix $ hostname <* space
 
 -- | Command
 command :: Parser Command
-command = takeWhile1 isAlpha <|> cmdDigits <?> "a command"
+command = do
+  c <- takeWhile1 isAlpha <|> cmdDigits
+  return $ maybe (Unknown c) Command $ M.lookup c commandCodeMap
