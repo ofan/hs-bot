@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -32,6 +34,7 @@ where
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Data.Monoid ((<>))
+import Data.IORef
 import Control.Concurrent.STM.TBMChan
 import Control.Monad
 import Control.Monad.STM
@@ -59,20 +62,20 @@ type ReadChan = TBMChan Message
 type WriteChan = TBMChan TMessage
 
 -- | A specialized Proxy type for all plugins and components that communicate with IRC servers.
-type Plugin a' a b' b i = forall p m r. (Proxy p, MonadIOP p, MonadIO m, Monad m) =>
-  b' -> EitherP SomeException (ReaderP i p) a' a b' b m r
+type Plugin a' a b' b = forall p m r. (Proxy p, Monad m, MonadIO m, MonadIOP p) =>
+  b' -> EitherP SomeException (ReaderP Server p) a' a b' b m r
 
 {-  Receive from upstream ------------+                +----------------- Receive from downstream
                                       |                |
     Send to upstream -+               |                |               +- Send to downstream
                       |               |                |               |                   -}
-type PluginS = Plugin C               ()               (Maybe Message) (Maybe TMessage) Server
-type PluginD = Plugin ()              (Maybe TMessage) ()              (Maybe TMessage) Server
-type PluginU = Plugin (Maybe Message) ()               (Maybe Message) ()               Server
-type PluginB = Plugin (Maybe Message) (Maybe TMessage) (Maybe Message) (Maybe TMessage) Server
-type PluginC = Plugin (Maybe Message) (Maybe TMessage) ()              C                Server
-type PluginR = Plugin ()              (Maybe TMessage) ()              C                Server
-type PluginP = Plugin C               ()               ()              (Maybe TMessage) Server
+type PluginS = Plugin C               ()               (Maybe Message) (Maybe TMessage)
+type PluginD = Plugin ()              (Maybe TMessage) ()              (Maybe TMessage)
+type PluginU = Plugin (Maybe Message) ()               (Maybe Message) ()
+type PluginB = Plugin (Maybe Message) (Maybe TMessage) (Maybe Message) (Maybe TMessage)
+type PluginC = Plugin (Maybe Message) (Maybe TMessage) ()              C
+type PluginR = Plugin ()              (Maybe TMessage) ()              C
+type PluginP = Plugin C               ()               ()              (Maybe TMessage)
 
 data Server = Server {
   -- | Server host name
@@ -82,8 +85,16 @@ data Server = Server {
   -- | Handle to the socket
 , sHandle :: Handle
   -- | The time the connection established with the server
-, sConnectionTime :: ClockTime
+, sConnTime :: ClockTime
+  -- | The time of last PONG command received.
+, sLastPong :: IO (IORef ClockTime)
 } deriving (Show, Eq)
+
+instance Show (IO (IORef ClockTime)) where
+  show _ = "<IORef ClockTime>"
+
+instance Eq (IO (IORef ClockTime)) where
+  _ == _ = True
 
 {- Internal methods -}
 -- ``````````````````
@@ -117,13 +128,15 @@ writeTBMChanS ch () = forever $ do
 -- | Take lines of stream from a 'Handle' and sends down the pipe.
 hGetLineSE :: (Proxy p) =>
   Handle -> () ->  Producer (EitherP SomeException p) T.Text IO ()
-hGetLineSE h () = forever $ do
-    eof <- lift $ hIsEOF h
-    unless eof $ do
-        str <- lift $ E.try $ T.hGetLine h
-        case str of
-          Left e -> throwP e  -- Re-throw exception from IO monad
-          Right m -> respond m
+hGetLineSE h () = go
+  where go = do
+          eof <- lift $ hIsEOF h
+          unless eof $ do
+            str <- lift $ E.try $ T.hGetLine h
+            case str of
+              Left e -> throwP e  -- Re-throw exception from IO monad
+              Right m -> respond m >> go
+          when eof $ return ()
 
 -- | Take lines of 'Text' stream from downstream and write it to the 'Handle'.
 hPutStrLnDE :: (Proxy p) =>

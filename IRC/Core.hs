@@ -3,26 +3,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 module IRC.Core
 (
-  echoC
-, loginB
+ loginB
+,echoB
 )
 where
 
-import Control.Monad
 import Control.Proxy
 import Control.Proxy.Trans.Reader
 
 import IRC.Message
 import IRC.Internal
-
--- | Echo pipe, sends ping periodically to the server('Tunnel'), disconnect from the server if times out.
-echoC :: PluginC
-echoC () = forever $ do
-  h <- liftP ask
-  m <- request $ Just $ mkPing (sHost h)
-  case m of
-    Nothing -> return ()
-    Just (TMessage m' _) -> when (command m' == Command PING) $ void $ request $ Just $ mkPong (sHost h)
 
 -- | Login proxy, becomes a transparent proxy after sending NICK and USER command.
 loginB :: Nickname -> Username -> PluginB

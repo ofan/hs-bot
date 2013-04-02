@@ -28,6 +28,28 @@ module IRC.Message
 , commandCodeMap
 , rawShow
 , clientMessage
+, msgCmd
+, msgServ
+, msgNick
+, msgUser
+, msgHost
+, msgCmdList
+, msgTrailing
+, msgHostName
+, msgUserIP
+, msgUserIPAddr
+, msgCloak
+, tMsgCmd
+, tMsgServ
+, tMsgNick
+, tMsgUser
+, tMsgHost
+, tMsgCmdList
+, tMsgTrailing
+, tMsgHostName
+, tMsgUserIP
+, tMsgUserIPAddr
+, tMsgCloak
 -- * Message Constructors
 , mkNames
 , mkUser
@@ -517,6 +539,53 @@ commandCodeMap = M.fromList commandCodeList
 -- Message constructors
 -- ````````````````````
 
+-- | Helper functions
+msgCmd         :: Message  -> Command
+msgServ        :: Message  -> Servname
+msgNick        :: Message  -> Nickname
+msgUser        :: Message  -> User
+msgHost        :: Message  -> UserHost
+msgCmdList     :: Message  -> [Middle]
+msgTrailing    :: Message  -> Maybe Text
+msgHostName    :: Message  -> Host
+msgUserIP      :: Message  -> IPAddr
+msgUserIPAddr  :: Message  -> Text
+msgCloak       :: Message  -> [Text]
+tMsgCmd        :: TMessage -> Command
+tMsgServ       :: TMessage -> Servname
+tMsgNick       :: TMessage -> Nickname
+tMsgUser       :: TMessage -> User
+tMsgHost       :: TMessage -> UserHost
+tMsgCmdList    :: TMessage -> [Middle]
+tMsgTrailing   :: TMessage -> Maybe Text
+tMsgHostName   :: TMessage -> Host
+tMsgUserIP     :: TMessage -> IPAddr
+tMsgUserIPAddr :: TMessage -> Text
+tMsgCloak      :: TMessage -> [Text]
+
+msgCmd         = command
+msgServ        = servName . prefix
+msgNick        = nickName . prefix
+msgUser        = user     . prefix
+msgHost        = userHost . prefix
+msgCmdList     = cmdList  . params
+msgTrailing    = trailing . params
+msgHostName    = host     . msgHost
+msgUserIP      = ipAddr   . msgHost
+msgUserIPAddr  = ip       . msgUserIP
+msgCloak       = cloaks   . msgHost
+tMsgCmd        = command  . msg
+tMsgServ       = servName . prefix    . msg
+tMsgNick       = nickName . prefix    . msg
+tMsgUser       = user     . prefix    . msg
+tMsgHost       = userHost . prefix    . msg
+tMsgCmdList    = cmdList  . params    . msg
+tMsgTrailing   = trailing . params    . msg
+tMsgHostName   = host     . msgHost   . msg
+tMsgUserIP     = ipAddr   . msgHost   . msg
+tMsgUserIPAddr = ip       . msgUserIP . msg
+tMsgCloak      = cloaks   . msgHost   . msg
+
 -- | Contruct a PING message
 mkPing :: HostName -> Message
 mkPing h = clientMessage (Command PING) (Param [rawShow h] Nothing)
@@ -526,7 +595,7 @@ mkPong :: HostName -> Message
 mkPong h = clientMessage (Command PONG) (Param [rawShow h] Nothing)
 
 -- | Construct a USER message
-mkUser :: Text    -- ^ Registered user name
+mkUser :: Text   -- ^ Registered user name
          -> Mode -- ^ User modes
          -> Msg  -- ^ User's real name
          -> Message

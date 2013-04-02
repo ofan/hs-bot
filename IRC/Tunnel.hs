@@ -34,6 +34,8 @@ data Tunnel = Tunnel {
 , tParserThread :: ThreadId
   -- | ThreadId of the sender which handles outcoming messages
 , tSenderThread :: ThreadId
+  -- | ThreadId of the timer
+{-, tTimerThread  :: ThreadId-}
 }
 
 instance Eq Tunnel where
@@ -59,6 +61,16 @@ newTunnel server bufsize = do
       Left e -> E.throw e -- Rethrow exceptions in IO monad
       Right _ -> return ()
   return $ Tunnel server rch wch rtid wtid
+
+-- | Timer thread
+{-timer :: Server -> ReadChan -> WriteChan -> IO ()-}
+{-timer h rch wch = forever $ do-}
+  {-m <- tryPeekTBMChan rch-}
+  {-case m of-}
+    {-Just Nothing -> return ()-}
+    {-Just m' -> if (tMsgCmd == Command PONG)-}
+                {-then getClockTime >>= writeIORef (sLastPong h)-}
+                {-else -}
 
 -- | Read data from a tunnel, if tunnel is empty, it will block and wait for input.
 readTunnel :: Tunnel -> IO  TMessage
