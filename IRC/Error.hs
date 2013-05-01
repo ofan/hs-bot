@@ -20,6 +20,7 @@ import Control.Proxy.Trans.Either as P
 
 data TunnelError = TunnelIsClosed
                  | SpawnThreadFailed
+                 | ServerNoResponse
                  deriving (Show, Eq, Typeable, Enum)
 
 data ParserError = ParserFail String String [String]

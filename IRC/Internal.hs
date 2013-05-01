@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -10,6 +11,7 @@ module IRC.Internal
   Server(..)
 , ReadChan
 , WriteChan
+, Msg
 -- * Proxy types
 , Plugin
 , PluginS
@@ -28,6 +30,17 @@ module IRC.Internal
 , hPutStrLnDE
 , toMessage
 , toRaw
+, timeStamp
+, unTimeStamp
+-- * Blocking request and respond
+, requestMsg
+, respondMsg
+-- * Helper functions
+, runPlugin
+-- * Utils
+, updatePongTS
+-- * Reexports
+, module Control.Proxy.Trans.Reader
 )
 where
 
@@ -45,7 +58,7 @@ import Control.Proxy.Trans.Either
 import Control.Proxy.Trans.Reader
 
 import qualified Data.Attoparsec.Text as Parser
-import System.Time (ClockTime(..), getClockTime)
+import System.Time
 
 import Network (HostName, PortNumber)
 import System.IO (Handle, hIsEOF)
@@ -57,25 +70,27 @@ import IRC.Error
 {- Type and data declarations -}
 -- ````````````````````````````
 -- | The channel that the tunnel reads from
-type ReadChan = TBMChan Message
+type ReadChan = TBMChan TMessage
 -- | The channel that the tunnel writes to
 type WriteChan = TBMChan TMessage
+
+type Msg = Maybe TMessage
 
 -- | A specialized Proxy type for all plugins and components that communicate with IRC servers.
 type Plugin a' a b' b = forall p m r. (Proxy p, Monad m, MonadIO m, MonadIOP p) =>
   b' -> EitherP SomeException (ReaderP Server p) a' a b' b m r
 
-{-  Receive from upstream ------------+                +----------------- Receive from downstream
-                                      |                |
-    Send to upstream -+               |                |               +- Send to downstream
-                      |               |                |               |                   -}
-type PluginS = Plugin C               ()               (Maybe Message) (Maybe TMessage)
-type PluginD = Plugin ()              (Maybe TMessage) ()              (Maybe TMessage)
-type PluginU = Plugin (Maybe Message) ()               (Maybe Message) ()
-type PluginB = Plugin (Maybe Message) (Maybe TMessage) (Maybe Message) (Maybe TMessage)
-type PluginC = Plugin (Maybe Message) (Maybe TMessage) ()              C
-type PluginR = Plugin ()              (Maybe TMessage) ()              C
-type PluginP = Plugin C               ()               ()              (Maybe TMessage)
+{- Receive from upstream -+   +------ Receive from downstream
+                          |   |
+    Send to upstream -+   |   |    +- Send to downstream
+                      |   |   |    |                   -}
+type PluginS = Plugin C   ()  Msg Msg
+type PluginD = Plugin ()  Msg ()  Msg
+type PluginU = Plugin Msg ()  Msg ()
+type PluginB = Plugin Msg Msg Msg Msg
+type PluginC = Plugin Msg Msg ()  C
+type PluginR = Plugin ()  Msg ()  C
+type PluginP = Plugin C   ()  ()  Msg
 
 data Server = Server {
   -- | Server host name
@@ -86,15 +101,14 @@ data Server = Server {
 , sHandle :: Handle
   -- | The time the connection established with the server
 , sConnTime :: ClockTime
+  -- | The time of last PING command sent.
+, sLastPing :: IORef ClockTime
   -- | The time of last PONG command received.
-, sLastPong :: IO (IORef ClockTime)
+, sLastPong :: IORef ClockTime
 } deriving (Show, Eq)
 
-instance Show (IO (IORef ClockTime)) where
+instance Show (IORef ClockTime) where
   show _ = "<IORef ClockTime>"
-
-instance Eq (IO (IORef ClockTime)) where
-  _ == _ = True
 
 {- Internal methods -}
 -- ``````````````````
@@ -151,12 +165,12 @@ hPutStrLnDE h () = forever $ do
 -- | Parse each raw IRC message and send the result down in the pipeline.
 -- Automatically append CRLF at the end of the message, since hGetLine won't reserve it.
 toMessage :: (Proxy p) =>
-  () -> EitherP SomeException p () T.Text () TMessage IO ()
+  () -> EitherP SomeException p () T.Text () Message IO ()
 toMessage () = forever $ do
   s <- request ()
-  case Parser.parse message (s <> "\n") of
+  case Parser.parse message (s <> "\r\n") of
     -- TODO: make sure that parsed message is fully evaluated
-    Parser.Done _ m   -> lift getClockTime >>= (respond . TMessage m)
+    Parser.Done _ m   -> respond m
     Parser.Fail t c e -> throwP $ SomeException $ ParserFail e (T.unpack t) c
     Parser.Partial _  -> throwP $ SomeException ParserNeedMoreInput
 
@@ -165,4 +179,43 @@ toRaw :: (Proxy p) => () -> Pipe p Message T.Text IO ()
 toRaw () = runIdentityP $ forever $ do
   m <- request ()
   respond (rawShow m)
+
+-- | Add timestamp to a message
+timeStamp :: (Proxy p) => () -> Pipe p Message TMessage IO ()
+timeStamp () = runIdentityP $ forever $ do
+  m <- request ()
+  lift getClockTime >>= respond . TMessage m
+
+-- | Extract the message body ad discard timestamp
+unTimeStamp :: (Proxy p) => () -> Pipe p TMessage Message IO ()
+unTimeStamp () = runIdentityP $ forever $ do
+  (TMessage m _) <- request ()
+  respond m
+
+-- | Update the pong timestamp
+updatePongTS :: Server -> IO ()
+updatePongTS h = getClockTime >>= writeIORef (sLastPong h)
+
+-- | Request next message from upstream, and passing @k@ as argument, retrying if no next message.
+requestMsg :: (Proxy p, Monad m, Monad (p Msg Msg b' b m)) => Msg -> p Msg Msg b' b m TMessage
+requestMsg = go
+  where go k = do
+          m <- request k
+          case m of
+            Just m' -> return m'
+            Nothing -> request Nothing >>= go
+
+-- | Respond message to downstream, passing @k@ as argument, retrying if no next message.
+respondMsg :: (Proxy p, Monad m, Monad (p a' a Msg Msg m)) => Msg -> p a' a Msg Msg m TMessage
+respondMsg = go
+  where go k = do
+          m <- respond k
+          case m of
+            Just m' -> return m'
+            Nothing -> respond Nothing >>= go
+
+{- Helper functions -}
+-- ``````````````````
+runPlugin :: Monad m =>i-> (() -> EitherP e (ReaderP i ProxyFast) a' () () b m r)-> m (Either e r)
+runPlugin s = runProxy . runReaderK s . runEitherK
 

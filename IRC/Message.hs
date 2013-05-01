@@ -86,11 +86,14 @@ module IRC.Message
 , mkListOne
 , mkWho
 , mkWhoisOne
+-- * Helper functions
+, rawPrint
 )
 where
 
 import System.Time (ClockTime(..))
 import Data.Text as T
+import Data.Text.IO as T
 import qualified Data.HashMap.Strict as M
 import Data.Monoid ((<>))
 import Network (HostName)
@@ -105,9 +108,9 @@ type Channel  = Text
 type Mask     = Text
 type Mode     = Text
 
--- | A helper type alias that constructs a client message, a client message has no prefix.
-clientMessage ::  Command -> Param -> Message
-clientMessage = Message NullPrefix
+-- | A helper type alias that constructs a client message with a fake timestamp, a client message has no prefix.
+clientMessage ::  Command -> Param -> TMessage
+clientMessage c p = addTimeStamp $ Message NullPrefix c p
 
 
 data Command  = Command CommandCode
@@ -586,151 +589,155 @@ tMsgUserIP     = ipAddr   . msgHost   . msg
 tMsgUserIPAddr = ip       . msgUserIP . msg
 tMsgCloak      = cloaks   . msgHost   . msg
 
+-- | Add fake timestamp to a message
+addTimeStamp :: Message -> TMessage
+addTimeStamp m = TMessage m (TOD 0 0)
+
 -- | Contruct a PING message
-mkPing :: HostName -> Message
+mkPing :: HostName -> TMessage
 mkPing h = clientMessage (Command PING) (Param [rawShow h] Nothing)
 
 -- | Construct a PONG message
-mkPong :: HostName -> Message
+mkPong :: HostName -> TMessage
 mkPong h = clientMessage (Command PONG) (Param [rawShow h] Nothing)
 
 -- | Construct a USER message
 mkUser :: Text   -- ^ Registered user name
          -> Mode -- ^ User modes
          -> Msg  -- ^ User's real name
-         -> Message
+         -> TMessage
 mkUser u m r = clientMessage (Command USER) (Param [u, m] (Just r))
 
 -- | Construct a PASS message
-mkPass :: Text -> Message
+mkPass :: Text -> TMessage
 mkPass p = clientMessage (Command PASS) (Param [p] Nothing)
 
 -- | Construct a OPER message
 mkOper :: Text   -- ^ User name
          -> Text -- ^ Password
-         -> Message
+         -> TMessage
 mkOper u p = clientMessage (Command OPER) (Param [u, p] Nothing)
 
 -- | Construct a NICK message
-mkNick :: Nickname -> Message
+mkNick :: Nickname -> TMessage
 mkNick n = clientMessage (Command NICK) (Param [n] Nothing)
 
 -- | Construct a MODE message
-mkUserMode :: Nickname -> Mode -> Message
+mkUserMode :: Nickname -> Mode -> TMessage
 mkUserMode u m = clientMessage (Command MODE) (Param [u, m] Nothing)
 
 -- | Construct a PRIVMSG message, the target could be a user nickname or channel
-mkPrivMsg :: MsgTarget -> Msg -> Message
+mkPrivMsg :: MsgTarget -> Msg -> TMessage
 mkPrivMsg t m = clientMessage (Command PRIVMSG) (Param [rawShow t] (Just m))
 
 -- | Construct a NOTICE message, the target could be a user nickname or channel
-mkNotice :: MsgTarget -> Msg -> Message
+mkNotice :: MsgTarget -> Msg -> TMessage
 mkNotice t m = clientMessage (Command NOTICE) (Param [rawShow t] (Just m))
 
--- | Construct a MOTD (Message Of The Day) querying message.
-mkMOTD :: Message
+-- | Construct a MOTD (TMessage Of The Day) querying message.
+mkMOTD :: TMessage
 mkMOTD = clientMessage (Command MOTD) (Param [] Nothing)
 
 -- | Constuct a VERSION query message.
-mkVersion :: Maybe HostName -> Message
+mkVersion :: Maybe HostName -> TMessage
 mkVersion Nothing = clientMessage (Command VERSION) (Param [] Nothing)
 mkVersion (Just h) = clientMessage (Command VERSION) (Param [rawShow h] Nothing)
 
 -- | Construct a TIME query message
-mkTime :: Message
+mkTime :: TMessage
 mkTime = clientMessage (Command TIME) (Param [] Nothing)
 
 -- | Construct an INFO message.
-mkInfo :: Maybe HostName -> Message
+mkInfo :: Maybe HostName -> TMessage
 mkInfo Nothing = clientMessage (Command INFO) (Param [] Nothing)
 mkInfo (Just h) = clientMessage (Command INFO) (Param [rawShow h] Nothing)
 
 -- | Construct a WHO query message
-mkWho :: Nickname -> Message
+mkWho :: Nickname -> TMessage
 mkWho n = clientMessage (Command WHO) (Param [n] Nothing)
 
 -- | Construct a JOIN message
-mkJoin :: [Channel] -> Message
+mkJoin :: [Channel] -> TMessage
 mkJoin ch = clientMessage (Command JOIN) (Param ch Nothing)
 
 -- | Constuct a PART message
-mkPart :: [Channel] -> Maybe Msg -> Message
+mkPart :: [Channel] -> Maybe Msg -> TMessage
 mkPart ch m = clientMessage (Command JOIN) (Param [intercalate "," ch] m)
 
 -- | Construct a QUIT message
-mkQuit :: Maybe Text -> Message
+mkQuit :: Maybe Text -> TMessage
 mkQuit m = clientMessage (Command QUIT) (Param [] m)
 
 -- | Construct a channel mode message
-mkChannelMode :: Channel -> Mode -> Text -> Message
+mkChannelMode :: Channel -> Mode -> Text -> TMessage
 mkChannelMode ch m p = clientMessage (Command MODE) (Param [ch, m, p] Nothing)
 
 -- | Construct a TOPIC message
-mkTopic :: Channel -> Maybe Text -> Message
+mkTopic :: Channel -> Maybe Text -> TMessage
 mkTopic ch t = clientMessage (Command TOPIC) (Param [ch] t)
 
 -- | Construct a NAMES message
-mkNames :: [Channel] -> Message
+mkNames :: [Channel] -> TMessage
 mkNames ch = clientMessage (Command NAMES) (Param [intercalate "," ch] Nothing)
 
 -- | Construct a NAMES message with only one channel parameter
-mkNamesOne :: Channel -> Message
+mkNamesOne :: Channel -> TMessage
 mkNamesOne ch = mkNames [ch]
 
 -- | Constuct a LIST message
-mkList :: [Channel] -> Message
+mkList :: [Channel] -> TMessage
 mkList ch = clientMessage (Command LIST) (Param [intercalate "," ch] Nothing)
 
 -- | Construct a LIST message with only one channel parameter
-mkListOne :: Channel -> Message
+mkListOne :: Channel -> TMessage
 mkListOne ch = mkList [ch]
 
 -- | Constuct a INVITE message
-mkInvite :: Nickname -> Channel -> Message
+mkInvite :: Nickname -> Channel -> TMessage
 mkInvite n ch = clientMessage (Command INVITE) (Param [n, ch] Nothing)
 
 -- | Constuct a KICK message
-mkKick :: Channel -> [Nickname] -> Message
+mkKick :: Channel -> [Nickname] -> TMessage
 mkKick ch n = clientMessage (Command KICK) (Param [ch, intercalate "," n] Nothing)
 
 -- | Construct a KICK message with only one nickname
-mkKickOne :: Channel -> Nickname -> Message
+mkKickOne :: Channel -> Nickname -> TMessage
 mkKickOne ch n = mkKick ch [n]
 
 -- | Construct a WHOIS message
-mkWhois :: [Mask] -> Message
+mkWhois :: [Mask] -> TMessage
 mkWhois m = clientMessage (Command WHOIS) (Param [intercalate "," m] Nothing)
 
 -- | Construct a WHOIS message with only one mask
-mkWhoisOne :: Mask -> Message
+mkWhoisOne :: Mask -> TMessage
 mkWhoisOne m = mkWhois [m]
 
 -- | Construct a WHOWAS message
-mkWhowas :: [Nickname] -> Message
+mkWhowas :: [Nickname] -> TMessage
 mkWhowas n = clientMessage (Command WHOWAS) (Param [intercalate "," n] Nothing)
 
 -- | Construct a WHOWAS message with only one nickname
-mkWhowasOne :: Nickname -> Message
+mkWhowasOne :: Nickname -> TMessage
 mkWhowasOne n = mkWhowas [n]
 
 -- | Construct a AWAY message
-mkAway :: Maybe Msg -> Message
+mkAway :: Maybe Msg -> TMessage
 mkAway m = clientMessage (Command AWAY) (Param [] m)
 
 -- | Construct a USERHOST message
-mkUserHost :: [Nickname] -> Message
+mkUserHost :: [Nickname] -> TMessage
 mkUserHost u = clientMessage (Command USERHOST) (Param [intercalate "," u] Nothing)
 
 -- | Construct a USERHOST message with only one nickname
-mkUserHostOne :: Nickname -> Message
+mkUserHostOne :: Nickname -> TMessage
 mkUserHostOne u = mkUserHost [u]
 
 -- | Construct a ISON message
-mkIsOn :: [Nickname] -> Message
+mkIsOn :: [Nickname] -> TMessage
 mkIsOn n = clientMessage (Command ISON) (Param [T.unwords n] Nothing)
 
 -- | Construct a ISON message with only one nickname
-mkIsOnOne :: Nickname -> Message
+mkIsOnOne :: Nickname -> TMessage
 mkIsOnOne n = mkIsOn [n]
 
 -- Show instances
@@ -816,3 +823,15 @@ instance RawShow MsgTarget where
 
 instance RawShow String where
   rawShow = T.pack
+
+instance RawShow a => RawShow (Maybe a) where
+  rawShow Nothing  = "Nothing"
+  rawShow (Just a) = "Just " <> rawShow a
+
+instance (RawShow a, RawShow b) => RawShow (Either a b) where
+  rawShow (Left a)  = "Left" <> rawShow a
+  rawShow (Right b) = "Right" <> rawShow b
+
+-- Some useful functions
+rawPrint :: RawShow a => a -> IO ()
+rawPrint = T.putStrLn . rawShow
