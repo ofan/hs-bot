@@ -152,7 +152,7 @@ printMsgB = foreverK go
             Just m' -> liftIO (putStr "<- " >> rawPrint m')
           n <- request m
           case n of
-            Nothing -> return ()
+            Nothing -> void $ go Nothing
             Just n' -> liftIO (putStr "-> " >> rawPrint n')
           k <- respond n
           go k
@@ -163,15 +163,15 @@ loginB n u = foreverK go
   where go m = do
           m' <- request m
           case m' of
-            Nothing -> return ()
+            Nothing -> void $ go Nothing
             Just mm -> isAuth mm
-          n' <- respondMsg (Just m')
+          n' <- respondMsg m'
           go (Just n')
         sendID = do
           _ <- request (Just $ mkNick n)
-          liftIO $ putStrLn "Sent nick..."
-          _ <- request (Just $ mkUser u "0" "*")
-          liftIO $ putStrLn "Sent user..."
+          {-liftIO $ putStrLn "Sent nick..."-}
+          _ <- request (Just $ mkUser u "0" "hs-bot")
+          {-liftIO $ putStrLn "Sent user..."-}
           return ()
         isAuth m = maybe (return ()) matchMsg (tMsgTrailing m)
         matchMsg m = when (m == "*** Looking up your hostname...") sendID
