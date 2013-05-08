@@ -216,6 +216,6 @@ respondMsg = go
 
 {- Helper functions -}
 -- ``````````````````
-runPlugin :: Monad m =>i-> (() -> EitherP e (ReaderP i ProxyFast) a' () () b m r)-> m (Either e r)
+runPlugin :: Monad m =>i-> (() -> EitherP e (ReaderP i ProxyFast) a' () () b m r) -> m (Either e r)
 runPlugin s = runProxy . runReaderK s . runEitherK
 
