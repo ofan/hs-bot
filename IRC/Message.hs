@@ -606,7 +606,7 @@ mkUser :: Text   -- ^ Registered user name
          -> Mode -- ^ User modes
          -> Msg  -- ^ User's real name
          -> TMessage
-mkUser u m r = clientMessage (Command USER) (Param [u, m] (Just r))
+mkUser u m r = clientMessage (Command USER) (Param [u, m, "*"] (Just r))
 
 -- | Construct a PASS message
 mkPass :: Text -> TMessage
