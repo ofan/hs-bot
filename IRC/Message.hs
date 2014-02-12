@@ -91,7 +91,7 @@ module IRC.Message
 )
 where
 
-import System.Time (ClockTime(..))
+import Data.Time.Exts.Unix (UnixDateTimeMillis(..))
 import Data.Text as T
 import Data.Text.IO as T
 import qualified Data.HashMap.Strict as M
@@ -128,7 +128,7 @@ data Message  = Message { prefix    :: Prefix
               deriving (Eq)
 
 data TMessage = TMessage { msg       :: Message
-                         , timestamp :: ClockTime
+                         , timestamp :: UnixDateTimeMillis
                          }
               deriving (Eq)
 
@@ -591,7 +591,7 @@ tMsgCloak      = cloaks   . msgHost   . msg
 
 -- | Add fake timestamp to a message
 addTimeStamp :: Message -> TMessage
-addTimeStamp m = TMessage m (TOD 0 0)
+addTimeStamp m = TMessage m (UnixDateTimeMillis 0)
 
 -- | Contruct a PING message
 mkPing :: HostName -> TMessage
@@ -807,7 +807,7 @@ instance RawShow Command where
 instance RawShow CommandCode where
   rawShow = T.pack . show
 
-instance RawShow ClockTime where
+instance RawShow UnixDateTimeMillis where
   rawShow = T.pack . show
 
 instance RawShow TMessage where
